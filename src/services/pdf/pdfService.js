@@ -387,7 +387,7 @@ export const generateTestPDF = (companySettings = {}) => {
 };
 
 /**
- * Saves a PDF document
+ * Saves a PDF document to the user's device
  * @param {jsPDF} pdf - The PDF document
  * @param {string} filename - The filename to save as
  */

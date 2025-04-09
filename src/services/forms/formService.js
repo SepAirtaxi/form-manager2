@@ -12,6 +12,7 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { v4 as uuidv4 } from 'uuid';
 
 // Collection references
 const formsCollection = collection(db, 'forms');
@@ -77,10 +78,10 @@ export const createForm = async (formData) => {
     // Initialize with default values
     const newForm = {
       ...formData,
-      published: false,
-      revision: '1.0',
+      published: formData.published || false,
+      revision: formData.revision || '1.0',
       blocks: formData.blocks || [{
-        id: 'section1',
+        id: uuidv4(),
         type: 'section',
         title: 'Section 1',
         description: '',
@@ -121,6 +122,20 @@ export const updateForm = async (formId, formData) => {
 };
 
 /**
+ * Deletes a form
+ * @param {string} formId - The form ID
+ * @returns {Promise<void>}
+ */
+export const deleteForm = async (formId) => {
+  try {
+    await deleteDoc(doc(formsCollection, formId));
+  } catch (error) {
+    console.error(`Error deleting form with ID ${formId}:`, error);
+    throw error;
+  }
+};
+
+/**
  * Publishes a form (sets published = true)
  * @param {string} formId - The form ID
  * @returns {Promise<void>}
@@ -133,20 +148,6 @@ export const publishForm = async (formId) => {
     });
   } catch (error) {
     console.error(`Error publishing form with ID ${formId}:`, error);
-    throw error;
-  }
-};
-
-/**
- * Deletes a form
- * @param {string} formId - The form ID
- * @returns {Promise<void>}
- */
-export const deleteForm = async (formId) => {
-  try {
-    await deleteDoc(doc(formsCollection, formId));
-  } catch (error) {
-    console.error(`Error deleting form with ID ${formId}:`, error);
     throw error;
   }
 };

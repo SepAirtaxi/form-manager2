@@ -17,14 +17,15 @@ import {
   MenuItem,
   FormControlLabel,
   Switch,
-  Grid
+  Grid,
+  Divider
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
-import { v4 as uuidv4 } from 'uuid'; // You'll need to install this: npm install uuid
+import { v4 as uuidv4 } from 'uuid';
 
 const FIELD_TYPES = [
   { value: 'text', label: 'Short Text Field' },

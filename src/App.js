@@ -5,11 +5,15 @@ import CssBaseline from '@mui/material/CssBaseline';
 import theme from './theme';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
-// Placeholder components - we'll create these next
+// Components
 import Login from './components/auth/Login';
 import UserDashboard from './components/user/dashboard/UserDashboard';
 import AdminDashboard from './components/admin/dashboard/AdminDashboard';
 import Layout from './components/common/layout/Layout';
+import FormEditor from './components/admin/forms/FormEditor';
+import FormPreview from './components/admin/forms/FormPreview';
+import Settings from './components/admin/settings/Settings';
+import UserManagement from './components/admin/users/UserManagement';
 
 // Protected route component
 const ProtectedRoute = ({ element, requiredRole }) => {
@@ -54,19 +58,71 @@ function AppRoutes() {
       />
       
       {/* Admin routes */}
-      <Route 
-        path="/admin/*" 
-        element={
-          <ProtectedRoute 
-            element={
-              <Layout isAdmin>
-                <AdminDashboard />
-              </Layout>
-            } 
-            requiredRole="manager" 
-          />
-        } 
-      />
+      <Route path="/admin" element={
+        <ProtectedRoute 
+          element={
+            <Layout isAdmin>
+              <AdminDashboard />
+            </Layout>
+          } 
+          requiredRole="manager" 
+        />
+      } />
+      
+      <Route path="/admin/forms/create" element={
+        <ProtectedRoute 
+          element={
+            <Layout isAdmin>
+              <FormEditor />
+            </Layout>
+          } 
+          requiredRole="manager" 
+        />
+      } />
+      
+      <Route path="/admin/forms/edit/:formId" element={
+        <ProtectedRoute 
+          element={
+            <Layout isAdmin>
+              <FormEditor />
+            </Layout>
+          } 
+          requiredRole="manager" 
+        />
+      } />
+      
+      <Route path="/admin/forms/preview/:formId" element={
+        <ProtectedRoute 
+          element={
+            <Layout isAdmin>
+              <FormPreview />
+            </Layout>
+          } 
+          requiredRole="manager" 
+        />
+      } />
+      
+      <Route path="/admin/settings" element={
+        <ProtectedRoute 
+          element={
+            <Layout isAdmin>
+              <Settings />
+            </Layout>
+          } 
+          requiredRole="manager" 
+        />
+      } />
+      
+      <Route path="/admin/users" element={
+        <ProtectedRoute 
+          element={
+            <Layout isAdmin>
+              <UserManagement />
+            </Layout>
+          } 
+          requiredRole="admin" 
+        />
+      } />
       
       {/* Default redirect */}
       <Route path="/" element={<Navigate to={auth.currentUser ? (auth.hasRole('manager') ? "/admin" : "/dashboard") : "/login"} />} />

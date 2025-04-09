@@ -20,13 +20,14 @@ import PublishIcon from '@mui/icons-material/Publish';
 import PreviewIcon from '@mui/icons-material/Preview';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
-import { getFormById, createForm, updateForm, publishForm } from '../../../services/forms/formService';
-import FormBlockEditor from './FormBlockEditor'; // We'll create this next
+import { v4 as uuidv4 } from 'uuid';
+import { getFormById, createForm, updateForm, deleteForm, publishForm } from '../../../services/forms/formService';
+import FormBlockEditor from './FormBlockEditor';
 
 function FormEditor() {
   const { formId } = useParams();
   const navigate = useNavigate();
-  const isNewForm = !formId;
+  const isNewForm = !formId || formId === 'new';
   
   const [form, setForm] = useState({
     title: '',
@@ -35,7 +36,7 @@ function FormEditor() {
     revision: '1.0',
     published: false,
     blocks: [{
-      id: 'section1',
+      id: uuidv4(),
       type: 'section',
       title: 'Section 1',
       description: '',
@@ -52,7 +53,10 @@ function FormEditor() {
   
   useEffect(() => {
     const loadForm = async () => {
-      if (isNewForm) return;
+      if (isNewForm) {
+        setLoading(false);
+        return;
+      }
       
       try {
         const formData = await getFormById(formId);
@@ -153,14 +157,24 @@ function FormEditor() {
     // Save form first, then navigate to preview
     handleSaveForm().then(() => {
       navigate(`/admin/forms/preview/${formId || 'new'}`);
+    }).catch(error => {
+      console.error('Error saving form before preview:', error);
     });
   };
   
   const handleDeleteForm = () => {
     // Implement delete confirmation dialog later
     if (window.confirm('Are you sure you want to delete this form? This action cannot be undone.')) {
-      // Implement delete logic
-      navigate('/admin');
+      if (!isNewForm) {
+        deleteForm(formId).then(() => {
+          navigate('/admin');
+        }).catch(error => {
+          console.error('Error deleting form:', error);
+          setSaveStatus('Error deleting form');
+        });
+      } else {
+        navigate('/admin');
+      }
     }
   };
   
