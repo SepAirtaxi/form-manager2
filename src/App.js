@@ -12,6 +12,8 @@ import AdminDashboard from './components/admin/dashboard/AdminDashboard';
 import Layout from './components/common/layout/Layout';
 import FormEditor from './components/admin/forms/FormEditor';
 import FormPreview from './components/admin/forms/FormPreview';
+import FormViewer from './components/user/forms/FormViewer';
+import UserForms from './components/user/forms/UserForms';
 import Settings from './components/admin/settings/Settings';
 import UserManagement from './components/admin/users/UserManagement';
 
@@ -52,6 +54,34 @@ function AppRoutes() {
                 <UserDashboard />
               </Layout>
             } 
+            requiredRole="employee" 
+          />
+        } 
+      />
+      
+      <Route 
+        path="/form/:formId" 
+        element={
+          <ProtectedRoute 
+            element={
+              <Layout>
+                <FormViewer />
+              </Layout>
+            }
+            requiredRole="employee" 
+          />
+        } 
+      />
+      
+      <Route 
+        path="/my-forms" 
+        element={
+          <ProtectedRoute 
+            element={
+              <Layout>
+                <UserForms />
+              </Layout>
+            }
             requiredRole="employee" 
           />
         } 
@@ -126,6 +156,9 @@ function AppRoutes() {
       
       {/* Default redirect */}
       <Route path="/" element={<Navigate to={auth.currentUser ? (auth.hasRole('manager') ? "/admin" : "/dashboard") : "/login"} />} />
+      
+      {/* Catch all */}
+      <Route path="*" element={<Navigate to="/" />} />
     </Routes>
   );
 }
