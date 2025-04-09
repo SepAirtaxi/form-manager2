@@ -17,16 +17,33 @@ import {
   Checkbox,
   MenuItem,
   Select,
-  Stepper,
-  Step,
-  StepLabel,
-  StepContent,
-  FormHelperText
+  FormHelperText,
+  Stack,
+  IconButton,
+  Drawer,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemIcon,
+  Chip,
+  LinearProgress,
+  Container,
+  useMediaQuery,
+  useTheme,
+  Card,
+  CardContent,
+  InputAdornment
 } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
 import SendIcon from '@mui/icons-material/Send';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import MenuIcon from '@mui/icons-material/Menu';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ErrorIcon from '@mui/icons-material/Error';
+import NavigateNextIcon from '@mui/icons-material/NavigateNext';
+import NavigateBeforeIcon from '@mui/icons-material/NavigateBefore';
+import ListIcon from '@mui/icons-material/List';
 import { useAuth } from '../../../contexts/AuthContext';
 import { getFormById, submitForm, saveFormDraft, getFormDraft } from '../../../services/forms/formService';
 
@@ -34,17 +51,23 @@ function FormViewer() {
   const { formId } = useParams();
   const navigate = useNavigate();
   const { currentUser } = useAuth();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const isTablet = useMediaQuery(theme.breakpoints.down('md'));
   
   const [form, setForm] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [formData, setFormData] = useState({});
-  const [activeStep, setActiveStep] = useState(0);
+  const [activeSection, setActiveSection] = useState(0);
+  const [navDrawerOpen, setNavDrawerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState(null);
   const [validationErrors, setValidationErrors] = useState({});
+  const [sectionValidation, setSectionValidation] = useState({});
+  const [progress, setProgress] = useState(0);
   
-  // Extract top-level sections to use as steps
+  // Extract top-level sections to use as navigation items
   const topLevelSections = form?.blocks.filter(block => 
     block.type === 'section' && block.level === 1
   ) || [];
@@ -82,6 +105,65 @@ function FormViewer() {
     }
   }, [formId, currentUser]);
   
+  // Update section validation status and progress whenever formData changes
+  useEffect(() => {
+    if (!form) return;
+    
+    const newSectionValidation = {};
+    let completedSections = 0;
+    
+    // Check each section for completeness
+    topLevelSections.forEach((section, index) => {
+      const sectionErrors = validateSection(section);
+      const isValid = Object.keys(sectionErrors).length === 0;
+      
+      // Check if any fields in this section have been filled
+      const sectionFields = getAllFieldsInSection(section);
+      const hasData = sectionFields.some(fieldId => {
+        const value = formData[fieldId];
+        return value !== undefined && value !== '' && value !== null;
+      });
+      
+      // A section is complete if it's valid and has at least some data
+      const isComplete = isValid && hasData && sectionFields.length > 0;
+      
+      newSectionValidation[section.id] = {
+        isValid,
+        isComplete,
+        hasData
+      };
+      
+      if (isComplete) {
+        completedSections++;
+      }
+    });
+    
+    setSectionValidation(newSectionValidation);
+    
+    // Calculate overall progress
+    const totalSections = topLevelSections.length;
+    const newProgress = totalSections > 0 ? (completedSections / totalSections) * 100 : 0;
+    setProgress(newProgress);
+  }, [formData, form, topLevelSections]);
+  
+  // Helper function to get all field IDs in a section
+  const getAllFieldsInSection = (section) => {
+    const fields = [];
+    
+    const traverse = (block) => {
+      if (block.type === 'field') {
+        fields.push(block.id);
+      }
+      
+      if (block.children && block.children.length > 0) {
+        block.children.forEach(traverse);
+      }
+    };
+    
+    traverse(section);
+    return fields;
+  };
+  
   const handleInputChange = (fieldId, value) => {
     setFormData(prev => ({
       ...prev,
@@ -98,23 +180,34 @@ function FormViewer() {
     }
   };
   
-  const handleNext = () => {
-    // Validate required fields in current section
-    const currentSection = topLevelSections[activeStep];
-    const errors = validateSection(currentSection);
-    
-    if (Object.keys(errors).length > 0) {
-      setValidationErrors(prev => ({ ...prev, ...errors }));
-      return;
-    }
-    
-    setActiveStep((prevActiveStep) => prevActiveStep + 1);
+  const handleSectionChange = (index) => {
+    setActiveSection(index);
+    closeNavDrawer();
     window.scrollTo(0, 0);
   };
   
+  const handleNext = () => {
+    // Move to the next section if not at the end
+    if (activeSection < topLevelSections.length - 1) {
+      setActiveSection(activeSection + 1);
+      window.scrollTo(0, 0);
+    }
+  };
+  
   const handleBack = () => {
-    setActiveStep((prevActiveStep) => prevActiveStep - 1);
-    window.scrollTo(0, 0);
+    // Move to the previous section if not at the beginning
+    if (activeSection > 0) {
+      setActiveSection(activeSection - 1);
+      window.scrollTo(0, 0);
+    }
+  };
+  
+  const openNavDrawer = () => {
+    setNavDrawerOpen(true);
+  };
+  
+  const closeNavDrawer = () => {
+    setNavDrawerOpen(false);
   };
   
   const validateSection = (section) => {
@@ -217,7 +310,7 @@ function FormViewer() {
         const errors = validateSection(section);
         
         if (Object.keys(errors).length > 0) {
-          setActiveStep(i);
+          setActiveSection(i);
           break;
         }
       }
@@ -247,23 +340,27 @@ function FormViewer() {
   };
   
   // Render a field based on its type
-  const renderField = (field) => {
+  const renderField = (field, path) => {
     const fieldId = field.id;
     const value = formData[fieldId] !== undefined ? formData[fieldId] : '';
     const error = validationErrors[fieldId];
+    
+    // The field label with path prefix
+    const fieldLabel = `${path} ${field.title}`;
     
     switch (field.fieldType) {
       case 'text':
         return (
           <TextField
             fullWidth
-            label={field.title}
+            label={fieldLabel}
             value={value}
             onChange={(e) => handleInputChange(fieldId, e.target.value)}
-            margin="normal"
+            margin="dense"
             error={!!error}
             helperText={error}
             required={field.required}
+            size={isMobile ? "small" : "medium"}
           />
         );
       
@@ -271,15 +368,16 @@ function FormViewer() {
         return (
           <TextField
             fullWidth
-            label={field.title}
+            label={fieldLabel}
             value={value}
             onChange={(e) => handleInputChange(fieldId, e.target.value)}
             multiline
-            rows={4}
-            margin="normal"
+            rows={isMobile ? 3 : 4}
+            margin="dense"
             error={!!error}
             helperText={error}
             required={field.required}
+            size={isMobile ? "small" : "medium"}
           />
         );
       
@@ -287,14 +385,16 @@ function FormViewer() {
         return (
           <TextField
             fullWidth
-            label={field.title}
+            label={fieldLabel}
             type="number"
             value={value}
             onChange={(e) => handleInputChange(fieldId, e.target.value)}
-            margin="normal"
+            margin="dense"
             error={!!error}
             helperText={error}
             required={field.required}
+            InputProps={{ inputProps: { min: 0 } }}
+            size={isMobile ? "small" : "medium"}
           />
         );
       
@@ -302,17 +402,18 @@ function FormViewer() {
         return (
           <TextField
             fullWidth
-            label={field.title}
+            label={fieldLabel}
             type="date"
             value={value}
             onChange={(e) => handleInputChange(fieldId, e.target.value)}
-            margin="normal"
+            margin="dense"
             InputLabelProps={{
               shrink: true,
             }}
             error={!!error}
             helperText={error}
             required={field.required}
+            size={isMobile ? "small" : "medium"}
           />
         );
       
@@ -320,18 +421,20 @@ function FormViewer() {
         return (
           <FormControl 
             component="fieldset" 
-            margin="normal"
+            margin="dense"
             error={!!error}
             required={field.required}
+            fullWidth
           >
             <FormControlLabel
               control={
                 <Checkbox
                   checked={!!value}
                   onChange={(e) => handleInputChange(fieldId, e.target.checked)}
+                  size={isMobile ? "small" : "medium"}
                 />
               }
-              label={field.title}
+              label={fieldLabel}
             />
             {error && <FormHelperText>{error}</FormHelperText>}
           </FormControl>
@@ -341,20 +444,22 @@ function FormViewer() {
         return (
           <FormControl 
             component="fieldset" 
-            margin="normal"
+            margin="dense"
             error={!!error}
             required={field.required}
+            fullWidth
           >
-            <FormLabel component="legend">{field.title}</FormLabel>
+            <FormLabel component="legend">{fieldLabel}</FormLabel>
             <RadioGroup
               value={value}
               onChange={(e) => handleInputChange(fieldId, e.target.value)}
+              row={isMobile && field.choices && field.choices.length <= 3}
             >
               {(field.choices || []).map((choice, index) => (
                 <FormControlLabel
                   key={index}
                   value={choice}
-                  control={<Radio />}
+                  control={<Radio size={isMobile ? "small" : "medium"} />}
                   label={choice}
                 />
               ))}
@@ -367,34 +472,39 @@ function FormViewer() {
         return (
           <FormControl 
             component="fieldset" 
-            margin="normal"
+            margin="dense"
             error={!!error}
             required={field.required}
+            fullWidth
           >
-            <FormLabel component="legend">{field.title}</FormLabel>
-            {(field.choices || []).map((choice, index) => (
-              <FormControlLabel
-                key={index}
-                control={
-                  <Checkbox
-                    checked={Array.isArray(value) ? value.includes(choice) : false}
-                    onChange={(e) => {
-                      const currentValues = Array.isArray(value) ? [...value] : [];
-                      if (e.target.checked) {
-                        currentValues.push(choice);
-                      } else {
-                        const index = currentValues.indexOf(choice);
-                        if (index !== -1) {
-                          currentValues.splice(index, 1);
+            <FormLabel component="legend">{fieldLabel}</FormLabel>
+            <Box sx={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', flexWrap: 'wrap' }}>
+              {(field.choices || []).map((choice, index) => (
+                <FormControlLabel
+                  key={index}
+                  control={
+                    <Checkbox
+                      checked={Array.isArray(value) ? value.includes(choice) : false}
+                      onChange={(e) => {
+                        const currentValues = Array.isArray(value) ? [...value] : [];
+                        if (e.target.checked) {
+                          currentValues.push(choice);
+                        } else {
+                          const index = currentValues.indexOf(choice);
+                          if (index !== -1) {
+                            currentValues.splice(index, 1);
+                          }
                         }
-                      }
-                      handleInputChange(fieldId, currentValues);
-                    }}
-                  />
-                }
-                label={choice}
-              />
-            ))}
+                        handleInputChange(fieldId, currentValues);
+                      }}
+                      size={isMobile ? "small" : "medium"}
+                    />
+                  }
+                  label={choice}
+                  sx={{ width: isMobile ? '100%' : 'auto', mr: 2 }}
+                />
+              ))}
+            </Box>
             {error && <FormHelperText>{error}</FormHelperText>}
           </FormControl>
         );
@@ -403,15 +513,17 @@ function FormViewer() {
         return (
           <FormControl 
             fullWidth 
-            margin="normal"
+            margin="dense"
             error={!!error}
             required={field.required}
+            size={isMobile ? "small" : "medium"}
           >
-            <FormLabel component="legend">{field.title}</FormLabel>
+            <FormLabel component="legend">{fieldLabel}</FormLabel>
             <Select
               value={value}
               onChange={(e) => handleInputChange(fieldId, e.target.value)}
               displayEmpty
+              sx={{ mt: 1 }}
             >
               <MenuItem value="" disabled>
                 Select an option
@@ -431,14 +543,15 @@ function FormViewer() {
         return (
           <TextField
             fullWidth
-            label={field.title}
+            label={fieldLabel}
             value={value}
             onChange={(e) => handleInputChange(fieldId, e.target.value)}
-            margin="normal"
+            margin="dense"
             placeholder="Type your name to sign"
             error={!!error}
-            helperText={error || "Type your name to sign (actual signature capture will be implemented later)"}
+            helperText={error || "Type your name to sign"}
             required={field.required}
+            size={isMobile ? "small" : "medium"}
           />
         );
       
@@ -452,52 +565,177 @@ function FormViewer() {
   };
   
   // Recursively render form blocks
-  const renderBlocks = (blocks, path = '') => {
+  const renderBlocks = (blocks, path = '', level = 1) => {
     return blocks.map((block, index) => {
       const currentPath = path ? `${path}.${index + 1}` : `${index + 1}`;
       
       if (block.type === 'section') {
-        return (
-          <Box key={block.id} sx={{ mb: 3 }}>
-            <Typography 
-              variant={block.level === 1 ? "h5" : block.level === 2 ? "h6" : "subtitle1"}
-              gutterBottom
-              sx={{ 
-                fontWeight: 'bold',
-                color: block.level === 1 ? 'primary.main' : 'text.primary'
-              }}
-            >
-              {currentPath} {block.title}
-            </Typography>
-            
-            {block.description && (
-              <Typography 
-                variant="body2" 
-                color="textSecondary" 
-                paragraph
-                sx={{ mb: 2 }}
+        // For level 2 and 3 sections, render them with appropriate styling
+        if (block.level > 1) {
+          return (
+            <Box key={block.id} sx={{ mb: 2 }}>
+              {/* Section Header */}
+              <Paper
+                sx={{
+                  p: isMobile ? 1.5 : 2,
+                  mb: 1,
+                  borderLeft: `4px solid ${block.level === 2 ? '#0064B2' : '#4dabf5'}`,
+                  backgroundColor: '#f5f9ff',
+                }}
               >
-                {block.description}
-              </Typography>
-            )}
-            
-            {/* Render children with proper indentation */}
-            <Box sx={{ ml: block.level > 1 ? 3 : 0 }}>
-              {block.children && block.children.length > 0 && 
-                renderBlocks(block.children, currentPath)}
+                <Typography
+                  variant={isMobile ? "subtitle1" : (block.level === 2 ? "h6" : "subtitle1")}
+                  gutterBottom={!!block.description}
+                  sx={{
+                    fontWeight: 'bold',
+                    display: 'flex',
+                    alignItems: 'center',
+                  }}
+                >
+                  {currentPath} {block.title}
+                </Typography>
+                
+                {block.description && (
+                  <Typography
+                    variant="body2"
+                    color="textSecondary"
+                    sx={{ mt: 0.5 }}
+                  >
+                    {block.description}
+                  </Typography>
+                )}
+              </Paper>
+              
+              {/* Section Content */}
+              <Box sx={{ pl: isMobile ? 1 : 2 }}>
+                {block.children && block.children.length > 0 &&
+                  renderBlocks(block.children, currentPath, block.level + 1)}
+              </Box>
             </Box>
-          </Box>
+          );
+        }
+        
+        // Level 1 sections are handled by navigation, so we just render their children
+        return (
+          <React.Fragment key={block.id}>
+            {block.children && block.children.length > 0 &&
+              renderBlocks(block.children, currentPath, block.level + 1)}
+          </React.Fragment>
         );
       } else if (block.type === 'field') {
         return (
-          <Box key={block.id} sx={{ mb: 2 }}>
-            {renderField(block)}
+          <Box key={block.id} sx={{ mb: 1.5 }}>
+            {renderField(block, currentPath)}
           </Box>
         );
       }
       
       return null;
     });
+  };
+  
+  // Navigation Drawer for section selection
+  const renderNavigationDrawer = () => {
+    return (
+      <Drawer
+        anchor="right"
+        open={navDrawerOpen}
+        onClose={closeNavDrawer}
+        sx={{
+          '& .MuiDrawer-paper': {
+            width: isMobile ? '80%' : 320,
+            boxSizing: 'border-box',
+          },
+        }}
+      >
+        <Box sx={{ p: 2 }}>
+          <Typography variant="h6" gutterBottom>
+            Form Sections
+          </Typography>
+          <Divider sx={{ mb: 2 }} />
+          <List>
+            {topLevelSections.map((section, index) => {
+              const validation = sectionValidation[section.id] || {};
+              return (
+                <ListItem
+                  key={section.id}
+                  button
+                  selected={activeSection === index}
+                  onClick={() => handleSectionChange(index)}
+                >
+                  <ListItemIcon>
+                    {validation.isComplete ? (
+                      <CheckCircleIcon color="success" />
+                    ) : validation.hasData && !validation.isValid ? (
+                      <ErrorIcon color="error" />
+                    ) : (
+                      <NavigateNextIcon />
+                    )}
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={`${index + 1}. ${section.title}`}
+                    secondary={
+                      validation.isComplete
+                        ? "Completed"
+                        : validation.hasData
+                        ? validation.isValid
+                          ? "In progress"
+                          : "Has errors"
+                        : "Not started"
+                    }
+                  />
+                </ListItem>
+              );
+            })}
+          </List>
+        </Box>
+      </Drawer>
+    );
+  };
+  
+  // Section selector dropdown for mobile
+  const renderSectionDropdown = () => {
+    return (
+      <FormControl fullWidth size={isMobile ? "small" : "medium"} sx={{ mb: 2 }}>
+        <Select
+          value={activeSection}
+          onChange={(e) => handleSectionChange(e.target.value)}
+          displayEmpty
+          variant="outlined"
+          sx={{ 
+            borderRadius: 2,
+            '.MuiSelect-select': {
+              display: 'flex', 
+              alignItems: 'center'
+            }
+          }}
+          startAdornment={
+            <InputAdornment position="start">
+              <ListIcon />
+            </InputAdornment>
+          }
+        >
+          {topLevelSections.map((section, index) => {
+            const validation = sectionValidation[section.id] || {};
+            return (
+              <MenuItem key={section.id} value={index}>
+                <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                  <Typography sx={{ flex: 1 }}>
+                    {index + 1}. {section.title}
+                  </Typography>
+                  {validation.isComplete && (
+                    <CheckCircleIcon color="success" fontSize="small" sx={{ ml: 1 }} />
+                  )}
+                  {!validation.isValid && validation.hasData && (
+                    <ErrorIcon color="error" fontSize="small" sx={{ ml: 1 }} />
+                  )}
+                </Box>
+              </MenuItem>
+            );
+          })}
+        </Select>
+      </FormControl>
+    );
   };
   
   if (loading) {
@@ -523,24 +761,61 @@ function FormViewer() {
     );
   }
   
+  // Current section being displayed
+  const currentSection = topLevelSections[activeSection];
+  
   return (
-    <Box>
+    <Container maxWidth={isMobile ? "sm" : "md"} sx={{ pb: 10 }}>
+      {/* Form Header */}
       <Box sx={{ mb: 2 }}>
-        <Typography variant="h4" component="h1" gutterBottom>
+        <Typography 
+          variant={isMobile ? "h5" : "h4"} 
+          component="h1" 
+          gutterBottom
+          sx={{ fontSize: isMobile ? '1.5rem' : undefined }}
+        >
           {form.title}
         </Typography>
         
         {form.description && (
-          <Typography variant="body1" paragraph>
+          <Typography 
+            variant="body1" 
+            paragraph
+            sx={{ fontSize: isMobile ? '0.9rem' : undefined }}
+          >
             {form.description}
           </Typography>
         )}
         
-        {form.department && (
-          <Typography variant="body2" color="textSecondary">
-            Department: {form.department}
-          </Typography>
-        )}
+        {/* Form metadata and progress */}
+        <Box sx={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', mb: 1, gap: 1 }}>
+          {form.department && (
+            <Chip 
+              label={`Department: ${form.department}`} 
+              size="small" 
+              sx={{ mr: 1 }}
+            />
+          )}
+          <Chip 
+            label={`Revision: ${form.revision}`} 
+            size="small" 
+            variant="outlined"
+          />
+          <Box sx={{ flexGrow: 1 }} />
+          <Chip 
+            icon={<CheckCircleIcon />}
+            label={`${Math.round(progress)}% complete`} 
+            color="primary" 
+            variant="outlined" 
+            size="small"
+          />
+        </Box>
+        
+        <LinearProgress 
+          variant="determinate" 
+          value={progress} 
+          sx={{ height: 6, borderRadius: 3, mb: 1 }}
+        />
       </Box>
       
       {saveStatus && (
@@ -552,91 +827,171 @@ function FormViewer() {
         </Alert>
       )}
       
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Stepper activeStep={activeStep} orientation="vertical">
-          {topLevelSections.map((section, index) => (
-            <Step key={section.id}>
-              <StepLabel>{section.title}</StepLabel>
-              <StepContent>
-                {renderBlocks([section])}
-                
-                <Box sx={{ mb: 2 }}>
-                  <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between' }}>
-                    <Button
-                      disabled={index === 0 || saving}
-                      onClick={handleBack}
-                      startIcon={<ArrowBackIcon />}
-                    >
-                      Back
-                    </Button>
-                    
-                    <Box>
-                      <Button
-                        onClick={handleSaveAsDraft}
-                        disabled={saving}
-                        startIcon={<SaveIcon />}
-                        sx={{ mr: 1 }}
-                      >
-                        Save Draft
-                      </Button>
-                      
-                      {index === topLevelSections.length - 1 ? (
-                        <Button
-                          variant="contained"
-                          color="primary"
-                          onClick={handleSubmitForm}
-                          disabled={saving}
-                          startIcon={<SendIcon />}
-                        >
-                          Submit
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="contained"
-                          onClick={handleNext}
-                          endIcon={<ArrowForwardIcon />}
-                        >
-                          Continue
-                        </Button>
-                      )}
-                    </Box>
-                  </Box>
-                </Box>
-              </StepContent>
-            </Step>
-          ))}
-        </Stepper>
+      {/* Section Navigation */}
+      {renderSectionDropdown()}
+      
+      {/* Main Form Content */}
+      <Paper 
+        sx={{ 
+          p: isMobile ? 2 : 3, 
+          mb: 3, 
+          borderRadius: 2,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
+        }}
+      >
+        {/* Current Section Header */}
+        <Box sx={{ mb: 3 }}>
+          <Typography 
+            variant={isMobile ? "h6" : "h5"} 
+            component="h2" 
+            gutterBottom
+            sx={{ 
+              fontWeight: 'bold',
+              color: theme.palette.primary.main,
+              display: 'flex',
+              alignItems: 'center',
+              pb: 1,
+              borderBottom: `1px solid ${theme.palette.divider}`
+            }}
+          >
+            {activeSection + 1}. {currentSection?.title}
+          </Typography>
+          
+          {currentSection?.description && (
+            <Typography 
+              variant="body1" 
+              color="textSecondary" 
+              sx={{ mt: 1 }}
+            >
+              {currentSection.description}
+            </Typography>
+          )}
+        </Box>
         
-        {/* Show form completion message */}
-        {activeStep === topLevelSections.length && (
-          <Box sx={{ p: 3, textAlign: 'center' }}>
-            <Typography variant="h6" gutterBottom>
-              All sections completed!
-            </Typography>
-            <Typography paragraph>
-              You have completed all sections of the form. Please review your answers before submitting.
-            </Typography>
-            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-              <Button
-                onClick={() => setActiveStep(topLevelSections.length - 1)}
-                sx={{ mr: 1 }}
-              >
-                Back to Last Section
-              </Button>
+        {/* Current Section Fields */}
+        {currentSection && renderBlocks([currentSection])}
+        
+        {/* Navigation buttons */}
+        <Box sx={{ 
+          mt: 4, 
+          display: 'flex', 
+          justifyContent: 'space-between',
+          flexDirection: isMobile ? 'column' : 'row',
+          gap: isMobile ? 2 : 0
+        }}>
+          <Button
+            variant="outlined"
+            startIcon={<ArrowBackIcon />}
+            onClick={handleBack}
+            disabled={activeSection === 0 || saving}
+            fullWidth={isMobile}
+            size={isMobile ? "medium" : "large"}
+          >
+            Previous
+          </Button>
+          
+          <Box 
+            sx={{ 
+              display: 'flex', 
+              gap: 2,
+              flexDirection: isMobile ? 'column' : 'row',
+              width: isMobile ? '100%' : 'auto'
+            }}
+          >
+            <Button
+              variant="outlined"
+              startIcon={<SaveIcon />}
+              onClick={handleSaveAsDraft}
+              disabled={saving}
+              fullWidth={isMobile}
+              size={isMobile ? "medium" : "large"}
+            >
+              Save Draft
+            </Button>
+            
+            {activeSection === topLevelSections.length - 1 ? (
               <Button
                 variant="contained"
                 color="primary"
+                endIcon={<SendIcon />}
                 onClick={handleSubmitForm}
                 disabled={saving}
-                startIcon={<SendIcon />}
+                fullWidth={isMobile}
+                size={isMobile ? "medium" : "large"}
               >
-                Submit Form
+                Submit
               </Button>
-            </Box>
+            ) : (
+              <Button
+                variant="contained"
+                color="primary"
+                endIcon={<ArrowForwardIcon />}
+                onClick={handleNext}
+                disabled={saving}
+                fullWidth={isMobile}
+                size={isMobile ? "medium" : "large"}
+              >
+                Next
+              </Button>
+            )}
           </Box>
-        )}
+        </Box>
       </Paper>
-    </Box>
+      
+      {/* Fixed bottom navigation for mobile */}
+      {isMobile && (
+        <Paper 
+          sx={{ 
+            position: 'fixed', 
+            bottom: 0, 
+            left: 0, 
+            right: 0, 
+            p: 1.5,
+            borderRadius: 0,
+            boxShadow: '0 -2px 10px rgba(0,0,0,0.1)',
+            zIndex: 1000,
+            display: 'flex',
+            justifyContent: 'space-between',
+            backgroundColor: theme.palette.background.paper
+          }}
+        >
+          <Button
+            variant="text"
+            color="primary"
+            disabled={activeSection === 0}
+            onClick={handleBack}
+            startIcon={<ArrowBackIcon />}
+            size="small"
+          >
+            Back
+          </Button>
+          
+          <Button
+            variant="outlined"
+            color="primary"
+            onClick={openNavDrawer}
+            startIcon={<MenuIcon />}
+            size="small"
+          >
+            Sections
+          </Button>
+          
+          <Button
+            variant="text"
+            color="primary"
+            disabled={activeSection === topLevelSections.length - 1}
+            onClick={handleNext}
+            endIcon={<ArrowForwardIcon />}
+            size="small"
+          >
+            Next
+          </Button>
+        </Paper>
+      )}
+      
+      {/* Navigation Drawer */}
+      {renderNavigationDrawer()}
+    </Container>
   );
 }
 
