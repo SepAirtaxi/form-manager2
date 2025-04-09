@@ -13,15 +13,22 @@ import {
   Divider,
   Alert,
   Tooltip,
-  IconButton
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  RadioGroup,
+  Radio,
+  FormControl,
+  FormLabel
 } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
 import PublishIcon from '@mui/icons-material/Publish';
 import PreviewIcon from '@mui/icons-material/Preview';
 import DeleteIcon from '@mui/icons-material/Delete';
-import AddIcon from '@mui/icons-material/Add';
 import { v4 as uuidv4 } from 'uuid';
-import { getFormById, createForm, updateForm, deleteForm, publishForm } from '../../../services/forms/formService';
+import { getFormById, createForm, updateForm, deleteForm, publishForm, updateFormRevision } from '../../../services/forms/formService';
 import FormBlockEditor from './FormBlockEditor';
 
 function FormEditor() {
@@ -50,6 +57,10 @@ function FormEditor() {
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState(null);
+  
+  // For revision dialog
+  const [revisionDialogOpen, setRevisionDialogOpen] = useState(false);
+  const [revisionType, setRevisionType] = useState('minor');
   
   useEffect(() => {
     const loadForm = async () => {
@@ -115,31 +126,84 @@ function FormEditor() {
     }
   };
   
+  const openRevisionDialog = () => {
+    setRevisionDialogOpen(true);
+  };
+  
+  const closeRevisionDialog = () => {
+    setRevisionDialogOpen(false);
+  };
+  
+  const handleRevisionTypeChange = (e) => {
+    setRevisionType(e.target.value);
+  };
+  
+  const updateRevisionNumber = (currentRevision, type) => {
+    // Split the revision into major and minor numbers
+    const [major, minor] = currentRevision.split('.');
+    
+    if (type === 'major') {
+      // Increment major version and reset minor to 0
+      return `${parseInt(major) + 1}.0`;
+    } else {
+      // Increment minor version
+      return `${major}.${parseInt(minor) + 1}`;
+    }
+  };
+  
   const handlePublishForm = async () => {
-    try {
-      setSaving(true);
-      
-      // Save first, then publish
-      if (isNewForm) {
+    // For new forms, just publish with version 1.0
+    if (isNewForm) {
+      try {
+        setSaving(true);
         const newFormId = await createForm({
           ...form,
-          published: true
+          published: true,
+          revision: '1.0'
         });
         setSaveStatus('Form published successfully');
         
         // Redirect to edit the new form
         navigate(`/admin/forms/edit/${newFormId}`, { replace: true });
-      } else {
-        await updateForm(formId, {
-          ...form,
-          published: true
-        });
-        setForm(prev => ({
-          ...prev,
-          published: true
-        }));
-        setSaveStatus('Form published successfully');
+      } catch (error) {
+        console.error('Error publishing form:', error);
+        setSaveStatus('Error publishing form');
+      } finally {
+        setSaving(false);
+        
+        // Clear save status after 3 seconds
+        setTimeout(() => {
+          setSaveStatus(null);
+        }, 3000);
       }
+    } else {
+      // For existing forms, open revision dialog
+      openRevisionDialog();
+    }
+  };
+  
+  const handleConfirmPublish = async () => {
+    try {
+      setSaving(true);
+      closeRevisionDialog();
+      
+      // Calculate new revision number
+      const newRevision = updateRevisionNumber(form.revision, revisionType);
+      
+      // Update form with new revision and publish
+      await updateForm(formId, {
+        ...form,
+        published: true,
+        revision: newRevision
+      });
+      
+      setForm(prev => ({
+        ...prev,
+        published: true,
+        revision: newRevision
+      }));
+      
+      setSaveStatus(`Form published successfully as revision ${newRevision}`);
     } catch (error) {
       console.error('Error publishing form:', error);
       setSaveStatus('Error publishing form');
@@ -257,9 +321,9 @@ function FormEditor() {
             color="primary"
             startIcon={<PublishIcon />}
             onClick={handlePublishForm}
-            disabled={saving || form.published}
+            disabled={saving}
           >
-            {form.published ? 'Published' : 'Publish'}
+            {form.published ? 'Publish Update' : 'Publish'}
           </Button>
         </Box>
       </Box>
@@ -354,6 +418,57 @@ function FormEditor() {
           updateBlocks={updateBlocks} 
         />
       </Paper>
+      
+      {/* Revision Dialog */}
+      <Dialog
+        open={revisionDialogOpen}
+        onClose={closeRevisionDialog}
+        aria-labelledby="revision-dialog-title"
+      >
+        <DialogTitle id="revision-dialog-title">
+          Select Revision Type
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 1 }}>
+            <Typography paragraph>
+              Current revision: <strong>{form.revision}</strong>
+            </Typography>
+            <FormControl component="fieldset">
+              <FormLabel component="legend">Revision Type</FormLabel>
+              <RadioGroup
+                value={revisionType}
+                onChange={handleRevisionTypeChange}
+              >
+                <FormControlLabel 
+                  value="minor" 
+                  control={<Radio />} 
+                  label={`Minor Update (${form.revision.split('.')[0]}.${parseInt(form.revision.split('.')[1]) + 1})`}
+                />
+                <FormControlLabel 
+                  value="major" 
+                  control={<Radio />} 
+                  label={`Major Update (${parseInt(form.revision.split('.')[0]) + 1}.0)`}
+                />
+              </RadioGroup>
+            </FormControl>
+            <Typography variant="body2" color="textSecondary" sx={{ mt: 2 }}>
+              <strong>Minor Update:</strong> For small changes, corrections, or clarifications.
+              <br />
+              <strong>Major Update:</strong> For significant changes to form structure or content.
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeRevisionDialog}>Cancel</Button>
+          <Button 
+            onClick={handleConfirmPublish} 
+            variant="contained" 
+            color="primary"
+          >
+            Publish
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

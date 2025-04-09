@@ -5,21 +5,23 @@ import {
   Paper,
   Typography,
   Button,
-  Tabs,
-  Tab,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   CircularProgress,
   Alert,
-  Chip
+  Tabs,
+  Tab,
+  List,
+  ListItem,
+  ListItemText,
+  Divider,
+  Chip,
+  IconButton,
+  Tooltip
 } from '@mui/material';
-import { collection, query, where, getDocs, getDoc, orderBy } from 'firebase/firestore';
-import { db } from '../../../services/firebase/config';
+import LaunchIcon from '@mui/icons-material/Launch';
+import DeleteIcon from '@mui/icons-material/Delete';
 import { useAuth } from '../../../contexts/AuthContext';
+import { collection, query, where, getDocs, getDoc, doc, deleteDoc } from 'firebase/firestore';
+import { db } from '../../../services/firebase/config';
 import { formatTimestamp } from '../../../utils/dateUtils';
 
 function TabPanel(props) {
@@ -53,87 +55,62 @@ function UserForms() {
   
   useEffect(() => {
     const loadUserForms = async () => {
-      if (!currentUser) {
-        setLoading(false);
-        return;
-      }
+      if (!currentUser) return;
       
       try {
-        // Load submissions
+        setLoading(true);
+        
+        // Get all forms first to map titles
+        const formsSnapshot = await getDocs(collection(db, 'forms'));
+        const forms = {};
+        formsSnapshot.docs.forEach(doc => {
+          forms[doc.id] = doc.data().title;
+        });
+        
+        // Get user's submissions
         const submissionsQuery = query(
           collection(db, 'submissions'),
-          where('userId', '==', currentUser.uid),
-          orderBy('submittedAt', 'desc')
+          where('userId', '==', currentUser.uid)
         );
         
         const submissionsSnapshot = await getDocs(submissionsQuery);
         const submissionsList = [];
         
         for (const doc of submissionsSnapshot.docs) {
-          const submission = {
+          const formId = doc.data().formId;
+          const formTitle = forms[formId] || 'Unknown Form';
+          
+          submissionsList.push({
             id: doc.id,
-            ...doc.data()
-          };
-          
-          // Get the form details
-          try {
-            const formDoc = await getDoc(collection(db, 'forms'), submission.formId);
-            if (formDoc.exists()) {
-              submission.formTitle = formDoc.data().title;
-              submission.formRevision = formDoc.data().revision;
-            } else {
-              submission.formTitle = 'Unknown Form';
-              submission.formRevision = 'N/A';
-            }
-          } catch (error) {
-            console.error('Error getting form details:', error);
-            submission.formTitle = 'Unknown Form';
-            submission.formRevision = 'N/A';
-          }
-          
-          submissionsList.push(submission);
+            ...doc.data(),
+            formTitle
+          });
         }
         
-        setSubmissions(submissionsList);
-        
-        // Load drafts
+        // Get user's drafts
         const draftsQuery = query(
           collection(db, 'drafts'),
-          where('userId', '==', currentUser.uid),
-          orderBy('updatedAt', 'desc')
+          where('userId', '==', currentUser.uid)
         );
         
         const draftsSnapshot = await getDocs(draftsQuery);
         const draftsList = [];
         
         for (const doc of draftsSnapshot.docs) {
-          const draft = {
+          const formId = doc.data().formId;
+          const formTitle = forms[formId] || 'Unknown Form';
+          
+          draftsList.push({
             id: doc.id,
-            ...doc.data()
-          };
-          
-          // Get the form details
-          try {
-            const formDoc = await getDoc(collection(db, 'forms'), draft.formId);
-            if (formDoc.exists()) {
-              draft.formTitle = formDoc.data().title;
-              draft.formRevision = formDoc.data().revision;
-            } else {
-              draft.formTitle = 'Unknown Form';
-              draft.formRevision = 'N/A';
-            }
-          } catch (error) {
-            console.error('Error getting form details:', error);
-            draft.formTitle = 'Unknown Form';
-            draft.formRevision = 'N/A';
-          }
-          
-          draftsList.push(draft);
+            ...doc.data(),
+            formTitle
+          });
         }
         
+        setSubmissions(submissionsList);
         setDrafts(draftsList);
       } catch (error) {
-        console.error('Error loading forms:', error);
+        console.error('Error loading user forms:', error);
         setError('Failed to load your forms. Please try again.');
       } finally {
         setLoading(false);
@@ -147,13 +124,28 @@ function UserForms() {
     setTabValue(newValue);
   };
   
+  const handleViewSubmission = (submissionId) => {
+    navigate(`/admin/submissions/${submissionId}`);
+  };
+  
   const handleContinueDraft = (formId) => {
     navigate(`/form/${formId}`);
   };
   
-  const handleViewSubmission = (submissionId) => {
-    // Not implemented yet - could show a submission details dialog or page
-    alert(`View submission ${submissionId} is not implemented yet`);
+  const handleDeleteDraft = async (draftId) => {
+    if (!window.confirm('Are you sure you want to delete this draft? This action cannot be undone.')) {
+      return;
+    }
+    
+    try {
+      await deleteDoc(doc(db, 'drafts', draftId));
+      
+      // Update the list by removing the deleted draft
+      setDrafts(drafts.filter(draft => draft.id !== draftId));
+    } catch (error) {
+      console.error('Error deleting draft:', error);
+      setError('Failed to delete draft. Please try again.');
+    }
   };
   
   if (loading) {
@@ -164,103 +156,138 @@ function UserForms() {
     );
   }
   
-  if (error) {
-    return (
-      <Box sx={{ mt: 2 }}>
-        <Alert severity="error">{error}</Alert>
-      </Box>
-    );
-  }
-  
   return (
     <Box>
       <Typography variant="h4" component="h1" gutterBottom>
         My Forms
       </Typography>
       
-      <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-        <Tabs value={tabValue} onChange={handleTabChange} aria-label="form tabs">
-          <Tab label="Submitted Forms" />
-          <Tab label="Drafts" />
-        </Tabs>
-      </Box>
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
       
-      <TabPanel value={tabValue} index={0}>
-        {submissions.length === 0 ? (
-          <Typography>You have not submitted any forms yet.</Typography>
-        ) : (
-          <TableContainer component={Paper}>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Form</TableCell>
-                  <TableCell>Revision</TableCell>
-                  <TableCell>Submitted Date</TableCell>
-                  <TableCell>Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {submissions.map((submission) => (
-                  <TableRow key={submission.id}>
-                    <TableCell>{submission.formTitle}</TableCell>
-                    <TableCell>{submission.formRevision}</TableCell>
-                    <TableCell>
-                      {submission.submittedAt ? formatTimestamp(submission.submittedAt) : 'N/A'}
-                    </TableCell>
-                    <TableCell>
-                      <Button 
-                        size="small" 
-                        onClick={() => handleViewSubmission(submission.id)}
-                      >
-                        View
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        )}
-      </TabPanel>
-      
-      <TabPanel value={tabValue} index={1}>
-        {drafts.length === 0 ? (
-          <Typography>You don't have any draft forms.</Typography>
-        ) : (
-          <TableContainer component={Paper}>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Form</TableCell>
-                  <TableCell>Revision</TableCell>
-                  <TableCell>Last Updated</TableCell>
-                  <TableCell>Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {drafts.map((draft) => (
-                  <TableRow key={draft.id}>
-                    <TableCell>{draft.formTitle}</TableCell>
-                    <TableCell>{draft.formRevision}</TableCell>
-                    <TableCell>
-                      {draft.updatedAt ? formatTimestamp(draft.updatedAt) : 'N/A'}
-                    </TableCell>
-                    <TableCell>
-                      <Button 
-                        size="small" 
-                        color="primary"
-                        onClick={() => handleContinueDraft(draft.formId)}
-                      >
-                        Continue
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        )}
-      </TabPanel>
+      <Paper>
+        <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+          <Tabs value={tabValue} onChange={handleTabChange} aria-label="form tabs">
+            <Tab label="Submitted Forms" />
+            <Tab label="Drafts" />
+          </Tabs>
+        </Box>
+        
+        <TabPanel value={tabValue} index={0}>
+          {submissions.length > 0 ? (
+            <List>
+              {submissions.map((submission) => (
+                <React.Fragment key={submission.id}>
+                  <ListItem
+                    secondaryAction={
+                      <Tooltip title="View Details">
+                        <IconButton 
+                          edge="end" 
+                          onClick={() => handleViewSubmission(submission.id)}
+                        >
+                          <LaunchIcon />
+                        </IconButton>
+                      </Tooltip>
+                    }
+                  >
+                    <ListItemText
+                      primary={submission.formTitle}
+                      secondary={
+                        <>
+                          <Typography component="span" variant="body2" color="text.primary">
+                            Submitted: {submission.submittedAt ? formatTimestamp(submission.submittedAt) : 'N/A'}
+                          </Typography>
+                          <br />
+                          <Chip label="Completed" color="success" size="small" sx={{ mt: 1 }} />
+                        </>
+                      }
+                    />
+                  </ListItem>
+                  <Divider />
+                </React.Fragment>
+              ))}
+            </List>
+          ) : (
+            <Box sx={{ p: 3, textAlign: 'center' }}>
+              <Typography variant="body1" color="textSecondary">
+                You haven't submitted any forms yet.
+              </Typography>
+              <Button 
+                variant="contained" 
+                sx={{ mt: 2 }}
+                onClick={() => navigate('/dashboard')}
+              >
+                Go to Available Forms
+              </Button>
+            </Box>
+          )}
+        </TabPanel>
+        
+        <TabPanel value={tabValue} index={1}>
+          {drafts.length > 0 ? (
+            <List>
+              {drafts.map((draft) => (
+                <React.Fragment key={draft.id}>
+                  <ListItem
+                    secondaryAction={
+                      <>
+                        <Tooltip title="Continue Draft">
+                          <IconButton 
+                            edge="end" 
+                            onClick={() => handleContinueDraft(draft.formId)}
+                            sx={{ mr: 1 }}
+                          >
+                            <LaunchIcon />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Delete Draft">
+                          <IconButton 
+                            edge="end" 
+                            color="error"
+                            onClick={() => handleDeleteDraft(draft.id)}
+                          >
+                            <DeleteIcon />
+                          </IconButton>
+                        </Tooltip>
+                      </>
+                    }
+                  >
+                    <ListItemText
+                      primary={draft.formTitle}
+                      secondary={
+                        <>
+                          <Typography component="span" variant="body2" color="text.primary">
+                            Last updated: {draft.updatedAt ? formatTimestamp(draft.updatedAt) : 'N/A'}
+                          </Typography>
+                          <br />
+                          <Chip label="Draft" color="primary" size="small" sx={{ mt: 1 }} />
+                        </>
+                      }
+                    />
+                  </ListItem>
+                  <Divider />
+                </React.Fragment>
+              ))}
+            </List>
+          ) : (
+            <Box sx={{ p: 3, textAlign: 'center' }}>
+              <Typography variant="body1" color="textSecondary">
+                You don't have any saved drafts.
+              </Typography>
+              <Button 
+                variant="contained" 
+                sx={{ mt: 2 }}
+                onClick={() => navigate('/dashboard')}
+              >
+                Go to Available Forms
+              </Button>
+            </Box>
+          )}
+        </TabPanel>
+      </Paper>
     </Box>
   );
 }

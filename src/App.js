@@ -12,10 +12,11 @@ import AdminDashboard from './components/admin/dashboard/AdminDashboard';
 import Layout from './components/common/layout/Layout';
 import FormEditor from './components/admin/forms/FormEditor';
 import FormPreview from './components/admin/forms/FormPreview';
-import FormViewer from './components/user/forms/FormViewer';
-import UserForms from './components/user/forms/UserForms';
+import FormSubmissionViewer from './components/admin/forms/FormSubmissionViewer';
 import Settings from './components/admin/settings/Settings';
 import UserManagement from './components/admin/users/UserManagement';
+import FormViewer from './components/user/forms/FormViewer';
+import UserForms from './components/user/forms/UserForms';
 
 // Protected route component
 const ProtectedRoute = ({ element, requiredRole }) => {
@@ -60,6 +61,20 @@ function AppRoutes() {
       />
       
       <Route 
+        path="/forms" 
+        element={
+          <ProtectedRoute 
+            element={
+              <Layout>
+                <UserForms />
+              </Layout>
+            } 
+            requiredRole="employee" 
+          />
+        } 
+      />
+      
+      <Route 
         path="/form/:formId" 
         element={
           <ProtectedRoute 
@@ -67,21 +82,7 @@ function AppRoutes() {
               <Layout>
                 <FormViewer />
               </Layout>
-            }
-            requiredRole="employee" 
-          />
-        } 
-      />
-      
-      <Route 
-        path="/my-forms" 
-        element={
-          <ProtectedRoute 
-            element={
-              <Layout>
-                <UserForms />
-              </Layout>
-            }
+            } 
             requiredRole="employee" 
           />
         } 
@@ -132,6 +133,17 @@ function AppRoutes() {
         />
       } />
       
+      <Route path="/admin/submissions/:submissionId" element={
+        <ProtectedRoute 
+          element={
+            <Layout isAdmin>
+              <FormSubmissionViewer />
+            </Layout>
+          } 
+          requiredRole="manager" 
+        />
+      } />
+      
       <Route path="/admin/settings" element={
         <ProtectedRoute 
           element={
@@ -156,9 +168,6 @@ function AppRoutes() {
       
       {/* Default redirect */}
       <Route path="/" element={<Navigate to={auth.currentUser ? (auth.hasRole('manager') ? "/admin" : "/dashboard") : "/login"} />} />
-      
-      {/* Catch all */}
-      <Route path="*" element={<Navigate to="/" />} />
     </Routes>
   );
 }

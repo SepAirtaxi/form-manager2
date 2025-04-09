@@ -15,13 +15,13 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import LogoutIcon from '@mui/icons-material/Logout';
 import SettingsIcon from '@mui/icons-material/Settings';
 import PeopleIcon from '@mui/icons-material/People';
-import HistoryIcon from '@mui/icons-material/History';
+import DescriptionIcon from '@mui/icons-material/Description';
 import { useAuth } from '../../../contexts/AuthContext';
 import { signOut } from 'firebase/auth';
 import { auth } from '../../../services/firebase/config';
 
 function Navigation() {
-  const { currentUser, isManager, isAdmin } = useAuth();
+  const { isManager, isAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   
@@ -52,17 +52,17 @@ function Navigation() {
           <ListItemIcon>
             <AssignmentIcon />
           </ListItemIcon>
-          <ListItemText primary="Forms" />
+          <ListItemText primary="Available Forms" />
         </ListItem>
-        
+
         {/* My Forms - Available to all users */}
         <ListItem 
           button 
-          selected={location.pathname === '/my-forms'}
-          onClick={() => navigate('/my-forms')}
+          selected={location.pathname === '/forms'}
+          onClick={() => navigate('/forms')}
         >
           <ListItemIcon>
-            <HistoryIcon />
+            <DescriptionIcon />
           </ListItemIcon>
           <ListItemText primary="My Forms" />
         </ListItem>
@@ -71,7 +71,7 @@ function Navigation() {
         {isManager && (
           <ListItem 
             button 
-            selected={location.pathname === '/admin'}
+            selected={location.pathname.startsWith('/admin')}
             onClick={() => navigate('/admin')}
           >
             <ListItemIcon>

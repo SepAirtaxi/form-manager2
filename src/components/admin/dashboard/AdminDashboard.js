@@ -8,17 +8,21 @@ import {
   Button,
   Box,
   Tabs,
-  Tab
+  Tab,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+  CircularProgress
 } from '@mui/material';
-import { useNavigate, Routes, Route } from 'react-router-dom';
-import { collection, getDocs } from 'firebase/firestore';
+import { useNavigate } from 'react-router-dom';
+import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../../services/firebase/config';
 import AddIcon from '@mui/icons-material/Add';
-
-// Import Admin sub-components (we'll create these later)
-// import FormEditor from '../forms/FormEditor';
-// import CompanySettings from '../settings/CompanySettings';
-// import UserManagement from '../users/UserManagement';
+import { formatTimestamp } from '../../../utils/dateUtils';
 
 function TabPanel(props) {
   const { children, value, index, ...other } = props;
@@ -42,7 +46,9 @@ function TabPanel(props) {
 
 function AdminDashboard() {
   const [forms, setForms] = useState([]);
+  const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [submissionsLoading, setSubmissionsLoading] = useState(true);
   const [tabValue, setTabValue] = useState(0);
   const navigate = useNavigate();
   
@@ -66,12 +72,69 @@ function AdminDashboard() {
     fetchForms();
   }, []);
   
+  useEffect(() => {
+    const fetchSubmissions = async () => {
+      if (tabValue !== 1) return;
+      
+      try {
+        setSubmissionsLoading(true);
+        
+        // Get the 20 most recent submissions
+        const submissionsQuery = query(
+          collection(db, 'submissions'),
+          orderBy('submittedAt', 'desc'),
+          limit(20)
+        );
+        
+        const submissionsSnapshot = await getDocs(submissionsQuery);
+        
+        // Create a map to hold form titles
+        const formTitles = {};
+        forms.forEach(form => {
+          formTitles[form.id] = form.title;
+        });
+        
+        // Get user data for usernames
+        const usersSnapshot = await getDocs(collection(db, 'users'));
+        const users = {};
+        usersSnapshot.docs.forEach(doc => {
+          users[doc.id] = doc.data().name;
+        });
+        
+        const submissionsList = [];
+        
+        for (const doc of submissionsSnapshot.docs) {
+          const submission = {
+            id: doc.id,
+            ...doc.data(),
+            formTitle: formTitles[doc.data().formId] || 'Unknown Form',
+            userName: users[doc.data().userId] || 'Unknown User'
+          };
+          
+          submissionsList.push(submission);
+        }
+        
+        setSubmissions(submissionsList);
+      } catch (error) {
+        console.error('Error fetching submissions:', error);
+      } finally {
+        setSubmissionsLoading(false);
+      }
+    };
+    
+    fetchSubmissions();
+  }, [tabValue, forms]);
+  
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
   };
   
   const handleCreateForm = () => {
     navigate('/admin/forms/create');
+  };
+
+  const handleViewSubmission = (submissionId) => {
+    navigate(`/admin/submissions/${submissionId}`);
   };
   
   return (
@@ -123,7 +186,7 @@ function AdminDashboard() {
                   <Button 
                     size="small" 
                     color="primary"
-                    href={`/admin/forms/edit/${form.id}`}
+                    onClick={() => navigate(`/admin/forms/edit/${form.id}`)}
                   >
                     Edit
                   </Button>
@@ -131,7 +194,7 @@ function AdminDashboard() {
                     <Button 
                       size="small" 
                       color="primary"
-                      href={`/admin/forms/preview/${form.id}`}
+                      onClick={() => navigate(`/admin/forms/preview/${form.id}`)}
                     >
                       Preview
                     </Button>
@@ -150,10 +213,55 @@ function AdminDashboard() {
       </TabPanel>
       
       <TabPanel value={tabValue} index={1}>
-        <Typography variant="h6">Recent Form Submissions</Typography>
-        <Typography>
-          This section will display recently submitted forms.
-        </Typography>
+        <Typography variant="h6" gutterBottom>Recent Form Submissions</Typography>
+        
+        {submissionsLoading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          <TableContainer component={Paper}>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Form</TableCell>
+                  <TableCell>Submitted By</TableCell>
+                  <TableCell>Date</TableCell>
+                  <TableCell>Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {submissions.map((submission) => (
+                  <TableRow key={submission.id}>
+                    <TableCell>{submission.formTitle}</TableCell>
+                    <TableCell>{submission.userName}</TableCell>
+                    <TableCell>
+                      {submission.submittedAt ? 
+                        formatTimestamp(submission.submittedAt) : 
+                        'Unknown date'}
+                    </TableCell>
+                    <TableCell>
+                      <Button 
+                        size="small" 
+                        onClick={() => handleViewSubmission(submission.id)}
+                      >
+                        View
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                
+                {submissions.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={4} align="center">
+                      No submissions yet.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
       </TabPanel>
       
       <TabPanel value={tabValue} index={2}>
@@ -170,7 +278,14 @@ function AdminDashboard() {
                 </Typography>
               </CardContent>
               <CardActions>
-                <Button size="small" color="primary">
+                <Button 
+                  size="small" 
+                  color="primary"
+                  onClick={() => {
+                    // We'll implement this later
+                    alert('This feature is not yet implemented');
+                  }}
+                >
                   Generate Test PDF
                 </Button>
               </CardActions>
@@ -191,7 +306,7 @@ function AdminDashboard() {
                 <Button 
                   size="small" 
                   color="primary"
-                  href="/admin/settings"
+                  onClick={() => navigate('/admin/settings')}
                 >
                   Open Settings
                 </Button>
@@ -213,7 +328,7 @@ function AdminDashboard() {
                 <Button 
                   size="small" 
                   color="primary"
-                  href="/admin/users"
+                  onClick={() => navigate('/admin/users')}
                 >
                   Manage Users
                 </Button>
