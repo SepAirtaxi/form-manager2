@@ -22,7 +22,12 @@ import { useNavigate } from 'react-router-dom';
 import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../../services/firebase/config';
 import AddIcon from '@mui/icons-material/Add';
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
+import SettingsIcon from '@mui/icons-material/Settings';
+import PeopleIcon from '@mui/icons-material/People';
 import { formatTimestamp } from '../../../utils/dateUtils';
+import { generateTestPDF, openPDF } from '../../../services/pdf/pdfService';
+import { getCompanySettings } from '../../../services/settings/settingsService';
 
 function TabPanel(props) {
   const { children, value, index, ...other } = props;
@@ -50,6 +55,7 @@ function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [submissionsLoading, setSubmissionsLoading] = useState(true);
   const [tabValue, setTabValue] = useState(0);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
   const navigate = useNavigate();
   
   useEffect(() => {
@@ -265,7 +271,7 @@ function AdminDashboard() {
       </TabPanel>
       
       <TabPanel value={tabValue} index={2}>
-        <Typography variant="h6">Admin Tools</Typography>
+        <Typography variant="h6" gutterBottom>Admin Tools</Typography>
         <Grid container spacing={3}>
           <Grid item xs={12} sm={6} md={4}>
             <Card>
@@ -274,19 +280,34 @@ function AdminDashboard() {
                   Test PDF Generation
                 </Typography>
                 <Typography variant="body2" component="p">
-                  Generate a test PDF to verify the output formatting.
+                  Generate a sample PDF with test data to verify formatting and layout.
                 </Typography>
               </CardContent>
               <CardActions>
                 <Button 
                   size="small" 
                   color="primary"
-                  onClick={() => {
-                    // We'll implement this later
-                    alert('This feature is not yet implemented');
+                  startIcon={generatingPdf ? <CircularProgress size={16} /> : <PictureAsPdfIcon />}
+                  onClick={async () => {
+                    try {
+                      setGeneratingPdf(true);
+                      
+                      // Get current company settings
+                      const settings = await getCompanySettings();
+                      
+                      // Generate and open PDF
+                      const pdf = generateTestPDF(settings);
+                      openPDF(pdf);
+                    } catch (error) {
+                      console.error('Error generating test PDF:', error);
+                      alert('Error generating PDF. Please check console for details.');
+                    } finally {
+                      setGeneratingPdf(false);
+                    }
                   }}
+                  disabled={generatingPdf}
                 >
-                  Generate Test PDF
+                  {generatingPdf ? 'Generating...' : 'Generate Test PDF'}
                 </Button>
               </CardActions>
             </Card>
@@ -306,6 +327,7 @@ function AdminDashboard() {
                 <Button 
                   size="small" 
                   color="primary"
+                  startIcon={<SettingsIcon />}
                   onClick={() => navigate('/admin/settings')}
                 >
                   Open Settings
@@ -328,6 +350,7 @@ function AdminDashboard() {
                 <Button 
                   size="small" 
                   color="primary"
+                  startIcon={<PeopleIcon />}
                   onClick={() => navigate('/admin/users')}
                 >
                   Manage Users

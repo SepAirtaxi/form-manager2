@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Typography, Grid, Card, CardContent, CardActions, Button } from '@mui/material';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../../services/firebase/config';
+import { useNavigate } from 'react-router-dom';
 
 function UserDashboard() {
   const [forms, setForms] = useState([]);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
   
   useEffect(() => {
     const fetchForms = async () => {
@@ -32,6 +34,11 @@ function UserDashboard() {
     
     fetchForms();
   }, []);
+  
+  // Updated to include state that indicates this is a new form, not a draft continuation
+  const handleFillForm = (formId) => {
+    navigate(`/form/${formId}`);
+  };
   
   return (
     <div>
@@ -60,7 +67,7 @@ function UserDashboard() {
                 <Button 
                   size="small" 
                   color="primary"
-                  href={`/form/${form.id}`}
+                  onClick={() => handleFillForm(form.id)}
                 >
                   Fill Form
                 </Button>

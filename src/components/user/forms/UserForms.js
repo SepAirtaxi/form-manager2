@@ -128,8 +128,9 @@ function UserForms() {
     navigate(`/admin/submissions/${submissionId}`);
   };
   
+  // Updated to pass continueDraft flag
   const handleContinueDraft = (formId) => {
-    navigate(`/form/${formId}`);
+    navigate(`/form/${formId}`, { state: { continueDraft: true } });
   };
   
   const handleDeleteDraft = async (draftId) => {

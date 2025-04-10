@@ -8,17 +8,27 @@ import {
   CircularProgress,
   Alert,
   Divider,
-  List,
-  ListItem,
-  ListItemText,
   Grid,
-  Chip
+  Chip,
+  Tooltip,
+  IconButton,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
+import GetAppIcon from '@mui/icons-material/GetApp';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { doc, getDoc, collection } from 'firebase/firestore';
 import { db } from '../../../services/firebase/config';
-import { generateFormPDF, openPDF } from '../../../services/pdf/pdfService';
+import { generateFormPDF, openPDF, savePDF } from '../../../services/pdf/pdfService';
 import { formatTimestamp } from '../../../utils/dateUtils';
 import { getCompanySettings } from '../../../services/settings/settingsService';
 
@@ -32,6 +42,7 @@ function FormSubmissionViewer() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [companySettings, setCompanySettings] = useState(null);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
   
   useEffect(() => {
     const loadSubmissionData = async () => {
@@ -83,31 +94,93 @@ function FormSubmissionViewer() {
     loadSubmissionData();
   }, [submissionId]);
   
-  const handleGeneratePDF = () => {
+  const handleGeneratePDF = async (downloadFile = false) => {
     if (!form || !submission || !companySettings) return;
     
-    const pdf = generateFormPDF(form, submission.data, companySettings);
-    openPDF(pdf);
+    try {
+      setGeneratingPdf(true);
+      
+      // Prepare submission data for PDF
+      const pdfData = {
+        ...submission.data,
+        submittedAt: submission.submittedAt,
+        submittedBy: user ? user.name : 'Unknown User'
+      };
+      
+      const pdf = generateFormPDF(form, pdfData, companySettings);
+      
+      if (downloadFile) {
+        // Generate a filename based on form title and date
+        const formTitle = form.title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        const date = new Date().toISOString().split('T')[0];
+        const filename = `${formTitle}_${date}.pdf`;
+        
+        savePDF(pdf, filename);
+      } else {
+        openPDF(pdf);
+      }
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Error generating PDF. Please check console for details.');
+    } finally {
+      setGeneratingPdf(false);
+    }
   };
   
-  // Helper function to get field title by id
-  const getFieldTitle = (fieldId) => {
+  // Helper function to get field information by id
+  const getFieldInfo = (fieldId) => {
     // Recursive function to search for field in blocks
-    const findField = (blocks) => {
-      for (const block of blocks) {
+    const findField = (blocks, path = '') => {
+      for (let i = 0; i < blocks.length; i++) {
+        const block = blocks[i];
+        const currentPath = path ? `${path}.${i + 1}` : `${i + 1}`;
+        
         if (block.type === 'field' && block.id === fieldId) {
-          return block.title;
+          return {
+            title: block.title,
+            fieldType: block.fieldType,
+            description: block.description,
+            required: block.required,
+            path: currentPath
+          };
         }
         
         if (block.children && block.children.length > 0) {
-          const found = findField(block.children);
+          const found = findField(block.children, currentPath);
           if (found) return found;
         }
       }
       return null;
     };
     
-    return form && form.blocks ? findField(form.blocks) || fieldId : fieldId;
+    return form && form.blocks ? findField(form.blocks) : { title: fieldId, path: '' };
+  };
+  
+  // Helper function to get a section's info by ID
+  const getSectionInfo = (sectionId) => {
+    const findSection = (blocks, path = '') => {
+      for (let i = 0; i < blocks.length; i++) {
+        const block = blocks[i];
+        const currentPath = path ? `${path}.${i + 1}` : `${i + 1}`;
+        
+        if (block.type === 'section' && block.id === sectionId) {
+          return {
+            title: block.title,
+            description: block.description,
+            level: block.level,
+            path: currentPath
+          };
+        }
+        
+        if (block.children && block.children.length > 0) {
+          const found = findSection(block.children, currentPath);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+    
+    return form && form.blocks ? findSection(form.blocks) : null;
   };
   
   // Render field value based on its type and value
@@ -115,6 +188,9 @@ function FormSubmissionViewer() {
     if (value === undefined || value === null) {
       return '-';
     }
+    
+    const fieldInfo = getFieldInfo(fieldId);
+    const fieldType = fieldInfo?.fieldType;
     
     if (typeof value === 'boolean') {
       return value ? 'Yes' : 'No';
@@ -124,7 +200,93 @@ function FormSubmissionViewer() {
       return value.join(', ');
     }
     
+    // If it's a date field, try to format it nicely
+    if (fieldType === 'date') {
+      try {
+        const date = new Date(value);
+        if (!isNaN(date)) {
+          return date.toLocaleDateString();
+        }
+      } catch (e) {
+        // Fall back to raw value
+      }
+    }
+    
     return value.toString();
+  };
+  
+  // Organize form data by sections
+  const organizeFormDataBySections = () => {
+    if (!form || !submission || !submission.data) return [];
+    
+    const sectionMap = new Map();
+    
+    // First, create a map of all sections
+    const processSections = (blocks, parentSection = null) => {
+      blocks.forEach(block => {
+        if (block.type === 'section') {
+          const sectionInfo = {
+            id: block.id,
+            title: block.title,
+            description: block.description,
+            level: block.level,
+            parentSection: parentSection,
+            fields: []
+          };
+          
+          sectionMap.set(block.id, sectionInfo);
+          
+          if (block.children && block.children.length > 0) {
+            processSections(block.children, block.id);
+          }
+        }
+      });
+    };
+    
+    // Process all fields and assign them to sections
+    const mapFieldsToSections = (blocks, currentSection = null) => {
+      blocks.forEach(block => {
+        if (block.type === 'section') {
+          const sectionId = block.id;
+          
+          if (block.children && block.children.length > 0) {
+            mapFieldsToSections(block.children, sectionId);
+          }
+        } else if (block.type === 'field') {
+          const fieldId = block.id;
+          
+          // Check if there's data for this field
+          if (submission.data[fieldId] !== undefined) {
+            const fieldInfo = getFieldInfo(fieldId);
+            const fieldValue = renderFieldValue(fieldId, submission.data[fieldId]);
+            
+            const fieldData = {
+              id: fieldId,
+              title: fieldInfo.title,
+              value: fieldValue,
+              fieldType: fieldInfo.fieldType,
+              required: fieldInfo.required,
+              path: fieldInfo.path
+            };
+            
+            // Add to current section
+            if (currentSection && sectionMap.has(currentSection)) {
+              sectionMap.get(currentSection).fields.push(fieldData);
+            }
+          }
+        }
+      });
+    };
+    
+    // Build the section hierarchy
+    processSections(form.blocks);
+    mapFieldsToSections(form.blocks);
+    
+    // Convert map to array and sort sections by level and path
+    const sections = Array.from(sectionMap.values())
+      .filter(section => section.fields.length > 0);
+    
+    return sections;
   };
   
   if (loading) {
@@ -151,6 +313,8 @@ function FormSubmissionViewer() {
     );
   }
   
+  const formDataBySections = organizeFormDataBySections();
+  
   return (
     <Box>
       <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -167,13 +331,28 @@ function FormSubmissionViewer() {
             Back to Dashboard
           </Button>
           
-          <Button
-            variant="contained"
-            startIcon={<PictureAsPdfIcon />}
-            onClick={handleGeneratePDF}
-          >
-            Download PDF
-          </Button>
+          <Tooltip title="View PDF">
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={generatingPdf ? <CircularProgress size={16} /> : <PictureAsPdfIcon />}
+              onClick={() => handleGeneratePDF(false)}
+              disabled={generatingPdf}
+              sx={{ mr: 1 }}
+            >
+              View PDF
+            </Button>
+          </Tooltip>
+          
+          <Tooltip title="Download PDF">
+            <IconButton
+              color="primary"
+              onClick={() => handleGeneratePDF(true)}
+              disabled={generatingPdf}
+            >
+              <GetAppIcon />
+            </IconButton>
+          </Tooltip>
         </Box>
       </Box>
       
@@ -214,25 +393,128 @@ function FormSubmissionViewer() {
           Form Data
         </Typography>
         
-        {submission && submission.data && Object.keys(submission.data).length > 0 ? (
-          <List>
-            {Object.entries(submission.data).map(([fieldId, value]) => (
-              <ListItem key={fieldId} divider>
-                <ListItemText
-                  primary={getFieldTitle(fieldId)}
-                  secondary={renderFieldValue(fieldId, value)}
-                />
-              </ListItem>
-            ))}
-          </List>
+        {formDataBySections.length > 0 ? (
+          <Box>
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Form data is organized by sections. Click on a section to view its contents.
+            </Alert>
+            
+            {formDataBySections.map((section) => {
+              const sectionInfo = getSectionInfo(section.id);
+              const level = section.level;
+              const indent = (level - 1) * 16;
+              
+              return (
+                <Accordion key={section.id} sx={{ mb: 1 }}>
+                  <AccordionSummary
+                    expandIcon={<ExpandMoreIcon />}
+                    sx={{ 
+                      borderLeft: `4px solid ${level === 1 ? '#0064B2' : level === 2 ? '#4dabf5' : '#90caf9'}`,
+                      backgroundColor: '#f5f9ff'
+                    }}
+                  >
+                    <Box sx={{ pl: indent }}>
+                      <Typography variant={level === 1 ? "subtitle1" : "body1"} fontWeight="bold">
+                        {sectionInfo?.path} {section.title}
+                      </Typography>
+                      {section.description && (
+                        <Typography variant="body2" color="textSecondary">
+                          {section.description}
+                        </Typography>
+                      )}
+                    </Box>
+                  </AccordionSummary>
+                  <AccordionDetails>
+                    <TableContainer>
+                      <Table size="small">
+                        <TableHead>
+                          <TableRow>
+                            <TableCell width="30%">Field</TableCell>
+                            <TableCell width="70%">Value</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {section.fields.map((field) => (
+                            <TableRow key={field.id}>
+                              <TableCell>
+                                <Typography variant="body2" fontWeight="medium">
+                                  {field.path} {field.title}
+                                </Typography>
+                                <Typography variant="caption" color="textSecondary">
+                                  {field.fieldType} {field.required ? '(required)' : ''}
+                                </Typography>
+                              </TableCell>
+                              <TableCell>
+                                <Typography>
+                                  {field.value}
+                                </Typography>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  </AccordionDetails>
+                </Accordion>
+              );
+            })}
+          </Box>
         ) : (
           <Typography variant="body1" color="textSecondary">
             No form data available.
           </Typography>
         )}
-      </Paper>
-    </Box>
-  );
+        
+        {/* Flat view for all fields */}
+        <Box sx={{ mt: 4 }}>
+          <Typography variant="h6" gutterBottom>
+            All Fields (Flat View)
+          </Typography>
+          
+                      <TableContainer component={Paper} variant="outlined">
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell width="30%">Field</TableCell>
+                    <TableCell width="70%">Value</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {submission && submission.data && Object.entries(submission.data).map(([fieldId, value]) => {
+                    const fieldInfo = getFieldInfo(fieldId);
+                    return (
+                      <TableRow key={fieldId}>
+                        <TableCell>
+                          <Typography variant="body2" fontWeight="medium">
+                            {fieldInfo.path} {fieldInfo.title}
+                          </Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            {fieldInfo.fieldType || 'unknown'} {fieldInfo.required ? '(required)' : ''}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography>
+                            {renderFieldValue(fieldId, value)}
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  
+                  {(!submission || !submission.data || Object.keys(submission.data).length === 0) && (
+                    <TableRow>
+                      <TableCell colSpan={2} align="center">
+                        No form data available.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Box>
+        </Paper>
+      </Box>
+    );
 }
 
 export default FormSubmissionViewer;

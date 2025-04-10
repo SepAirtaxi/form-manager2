@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
   Paper,
@@ -50,10 +50,14 @@ import { getFormById, submitForm, saveFormDraft, getFormDraft } from '../../../s
 function FormViewer() {
   const { formId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { currentUser } = useAuth();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const isTablet = useMediaQuery(theme.breakpoints.down('md'));
+  
+  // Check if we're continuing a draft or starting fresh
+  const continueDraft = location.state?.continueDraft === true;
   
   const [form, setForm] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -75,22 +79,26 @@ function FormViewer() {
   useEffect(() => {
     const loadFormAndDrafts = async () => {
       try {
-        const [formData, draftData] = await Promise.all([
-          getFormById(formId),
-          getFormDraft(formId, currentUser.uid).catch(() => null)
-        ]);
+        setLoading(true);
         
+        // Always load the form definition
+        const formData = await getFormById(formId);
         setForm(formData);
         
-        // If there's a draft, load its data
-        if (draftData && draftData.data) {
-          setFormData(draftData.data);
-          setSaveStatus('Draft loaded');
+        // Only load draft if explicitly continuing a draft
+        if (continueDraft) {
+          const draftData = await getFormDraft(formId, currentUser.uid).catch(() => null);
           
-          // Clear save status after 3 seconds
-          setTimeout(() => {
-            setSaveStatus(null);
-          }, 3000);
+          // If there's a draft, load its data
+          if (draftData && draftData.data) {
+            setFormData(draftData.data);
+            setSaveStatus('Draft loaded');
+            
+            // Clear save status after 3 seconds
+            setTimeout(() => {
+              setSaveStatus(null);
+            }, 3000);
+          }
         }
       } catch (error) {
         console.error('Error loading form:', error);
@@ -103,8 +111,10 @@ function FormViewer() {
     if (currentUser) {
       loadFormAndDrafts();
     }
-  }, [formId, currentUser]);
+  }, [formId, currentUser, continueDraft]);
   
+  // Rest of the component remains unchanged...
+
   // Update section validation status and progress whenever formData changes
   useEffect(() => {
     if (!form) return;

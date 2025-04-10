@@ -7,12 +7,16 @@ import {
   Button,
   CircularProgress,
   Alert,
-  Divider
+  Divider,
+  Grid,
+  IconButton,
+  Tooltip
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
+import GetAppIcon from '@mui/icons-material/GetApp';
 import { getFormById } from '../../../services/forms/formService';
-import { generateFormPDF, openPDF } from '../../../services/pdf/pdfService';
+import { generateFormPDF, openPDF, savePDF } from '../../../services/pdf/pdfService';
 import { getCompanySettings } from '../../../services/settings/settingsService';
 
 function FormPreview() {
@@ -23,6 +27,7 @@ function FormPreview() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [companySettings, setCompanySettings] = useState(null);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
   
   useEffect(() => {
     const loadFormAndSettings = async () => {
@@ -54,11 +59,131 @@ function FormPreview() {
     navigate(`/admin/forms/edit/${formId}`);
   };
   
-  const handleGeneratePDF = () => {
+  const handleGeneratePDF = async (downloadFile = false) => {
     if (!form || !companySettings) return;
     
-    const pdf = generateFormPDF(form, {}, companySettings);
-    openPDF(pdf);
+    try {
+      setGeneratingPdf(true);
+      
+      // Generate sample data based on form structure
+      const sampleData = generateSampleData(form);
+      
+      // Generate the PDF
+      const pdf = generateFormPDF(form, sampleData, companySettings);
+      
+      if (downloadFile) {
+        // Generate a filename based on form title and date
+        const formTitle = form.title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        const date = new Date().toISOString().split('T')[0];
+        const filename = `${formTitle}_preview_${date}.pdf`;
+        
+        savePDF(pdf, filename);
+      } else {
+        openPDF(pdf);
+      }
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Error generating PDF. Please check console for details.');
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+  
+  // Generate sample data for preview
+  const generateSampleData = (form) => {
+    const sampleData = {};
+    
+    // Helper function to process blocks recursively
+    const processBlocks = (blocks) => {
+      blocks.forEach(block => {
+        if (block.type === 'field') {
+          // Generate sample value based on field type
+          switch (block.fieldType) {
+            case 'text':
+              sampleData[block.id] = 'Sample text';
+              break;
+            case 'textarea':
+              sampleData[block.id] = 'This is a sample long text entry that demonstrates how multi-line text will appear in the PDF output.';
+              break;
+            case 'number':
+              sampleData[block.id] = '123';
+              break;
+            case 'date':
+              sampleData[block.id] = new Date().toISOString().split('T')[0];
+              break;
+            case 'checkbox':
+              sampleData[block.id] = Math.random() > 0.5;
+              break;
+            case 'radio':
+              if (block.choices && block.choices.length > 0) {
+                sampleData[block.id] = block.choices[0];
+              }
+              break;
+            case 'multiCheckbox':
+              if (block.choices && block.choices.length > 0) {
+                // Select a random subset of choices
+                sampleData[block.id] = block.choices
+                  .filter(() => Math.random() > 0.5);
+                
+                // Ensure at least one choice is selected
+                if (sampleData[block.id].length === 0 && block.choices.length > 0) {
+                  sampleData[block.id] = [block.choices[0]];
+                }
+              }
+              break;
+            case 'dropdown':
+              if (block.choices && block.choices.length > 0) {
+                sampleData[block.id] = block.choices[0];
+              }
+              break;
+            case 'signature':
+              sampleData[block.id] = 'John Doe';
+              break;
+            default:
+              sampleData[block.id] = 'Sample data';
+          }
+        }
+        
+        // Process children if any
+        if (block.children && block.children.length > 0) {
+          processBlocks(block.children);
+        }
+      });
+    };
+    
+    if (form.blocks && form.blocks.length > 0) {
+      processBlocks(form.blocks);
+    }
+    
+    // Add submission metadata for the preview
+    sampleData.submittedAt = new Date();
+    sampleData.submittedBy = 'Preview User';
+    
+    return sampleData;
+  };
+  
+  // Helper function to render a block hierarchy
+  const renderBlock = (block, level = 0, path = []) => {
+    const currentPath = [...path, block.type === 'section' ? 'S' : 'F'];
+    const indent = level * 16;
+    
+    return (
+      <Box key={block.id} sx={{ mb: 1 }}>
+        <Box sx={{ display: 'flex', pl: indent, py: 1, borderLeft: block.type === 'section' ? `4px solid ${level === 0 ? '#0064B2' : level === 1 ? '#4dabf5' : '#90caf9'}` : '4px solid #f5f5f5' }}>
+          <Typography variant={block.type === 'section' ? (level === 0 ? 'subtitle1' : 'body1') : 'body2'} 
+                     fontWeight={block.type === 'section' ? 'bold' : 'normal'}>
+            {currentPath.join('.')} {block.title}
+            {block.type === 'field' && ` (${block.fieldType}${block.required ? ', required' : ''})`}
+          </Typography>
+        </Box>
+        
+        {block.children && block.children.length > 0 && (
+          <Box>
+            {block.children.map((child, idx) => renderBlock(child, level + 1, [...currentPath, idx + 1]))}
+          </Box>
+        )}
+      </Box>
+    );
   };
   
   if (loading) {
@@ -101,13 +226,28 @@ function FormPreview() {
             Back to Edit
           </Button>
           
-          <Button
-            variant="contained"
-            startIcon={<PictureAsPdfIcon />}
-            onClick={handleGeneratePDF}
-          >
-            Generate PDF
-          </Button>
+          <Tooltip title="View PDF Preview">
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={generatingPdf ? <CircularProgress size={16} /> : <PictureAsPdfIcon />}
+              onClick={() => handleGeneratePDF(false)}
+              disabled={generatingPdf}
+              sx={{ mr: 1 }}
+            >
+              Preview PDF
+            </Button>
+          </Tooltip>
+          
+          <Tooltip title="Download PDF Preview">
+            <IconButton
+              color="primary"
+              onClick={() => handleGeneratePDF(true)}
+              disabled={generatingPdf}
+            >
+              <GetAppIcon />
+            </IconButton>
+          </Tooltip>
         </Box>
       </Box>
       
@@ -126,40 +266,47 @@ function FormPreview() {
         
         <Divider sx={{ my: 2 }} />
         
-        <Typography variant="h6" gutterBottom>
-          Form Structure
-        </Typography>
-        
-        {/* This is a placeholder for the actual form preview */}
-        {form.blocks.map((block, index) => (
-          <Box key={block.id} sx={{ mb: 2 }}>
-            <Paper sx={{ p: 2 }}>
-              <Typography variant="subtitle1" gutterBottom>
-                {index + 1}. {block.title}
+        <Grid container spacing={2}>
+          <Grid item xs={12} md={6}>
+            <Typography variant="h6" gutterBottom>
+              Form Structure
+            </Typography>
+            
+            <Alert severity="info" sx={{ mb: 2 }}>
+              This is a simplified preview. Use the PDF button to see a complete rendering with sample data.
+            </Alert>
+            
+            {form.blocks.map((block) => renderBlock(block))}
+          </Grid>
+          
+          <Grid item xs={12} md={6}>
+            <Typography variant="h6" gutterBottom>
+              PDF Settings
+            </Typography>
+            
+            <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1, mb: 2 }}>
+              <Typography variant="body2" gutterBottom>
+                <strong>Header on all pages:</strong> {form.headerOnAllPages ? 'Yes' : 'No (First page only)'}
               </Typography>
-              {block.description && (
-                <Typography variant="body2" color="textSecondary">
-                  {block.description}
-                </Typography>
-              )}
               
-              {/* Render child blocks in a simplified way for now */}
-              {block.children && block.children.length > 0 && (
-                <Box sx={{ ml: 4, mt: 2 }}>
-                  {block.children.map((child, childIndex) => (
-                    <Typography key={child.id} variant="body2">
-                      {index + 1}.{childIndex + 1} {child.title}
-                    </Typography>
-                  ))}
-                </Box>
-              )}
-            </Paper>
-          </Box>
-        ))}
-        
-        <Typography variant="body2" color="textSecondary" sx={{ mt: 2 }}>
-          This is a simplified preview. Use the PDF button to see a complete rendering.
-        </Typography>
+              <Typography variant="body2" gutterBottom>
+                <strong>Company name:</strong> {companySettings?.name || 'Not set'}
+              </Typography>
+              
+              <Typography variant="body2" gutterBottom>
+                <strong>EASA Approval:</strong> {companySettings?.easaNumber || 'Not set'}
+              </Typography>
+              
+              <Typography variant="body2">
+                <strong>Company logo:</strong> {companySettings?.logo ? 'Available' : 'Not set'}
+              </Typography>
+            </Box>
+            
+            <Typography variant="caption" color="textSecondary">
+              Company settings can be modified in the Settings page. These will appear in the PDF header and footer.
+            </Typography>
+          </Grid>
+        </Grid>
       </Paper>
     </Box>
   );
