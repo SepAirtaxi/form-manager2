@@ -18,13 +18,17 @@ import {
   FormControlLabel,
   Switch,
   Grid,
-  Divider
+  Divider,
+  Collapse
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
+import DynamicFormIcon from '@mui/icons-material/DynamicForm'; // New icon for Add Field
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { v4 as uuidv4 } from 'uuid';
 
 const FIELD_TYPES = [
@@ -43,6 +47,16 @@ function FormBlockEditor({ blocks, updateBlocks }) {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [currentEditBlock, setCurrentEditBlock] = useState(null);
   const [editPath, setEditPath] = useState([]);
+  // State to track collapsed sections
+  const [collapsedSections, setCollapsedSections] = useState({});
+  
+  // Function to toggle section collapse state
+  const toggleCollapse = (blockId) => {
+    setCollapsedSections(prev => ({
+      ...prev,
+      [blockId]: !prev[blockId]
+    }));
+  };
   
   // Function to get the full hierarchy path (e.g. 1.2.3) for a block
   const getBlockPath = (blockId, blocksArray = blocks, path = [], parentIdx = null) => {
@@ -243,6 +257,12 @@ function FormBlockEditor({ blocks, updateBlocks }) {
     
     const updatedBlocks = addBlockAtPath(parentPath, newSection);
     updateBlocks(updatedBlocks);
+    
+    // Make sure the new section is expanded
+    setCollapsedSections(prev => ({
+      ...prev,
+      [newSection.id]: false
+    }));
   };
   
   // Add a new field
@@ -370,6 +390,7 @@ function FormBlockEditor({ blocks, updateBlocks }) {
       const pathString = currentPath.join('.');
       const indentLevel = block.level - 1;
       const isSection = block.type === 'section';
+      const isCollapsed = collapsedSections[block.id] || false;
       
       // Adjust for indentation
       const indentWidth = indentLevel * 40;
@@ -389,27 +410,38 @@ function FormBlockEditor({ blocks, updateBlocks }) {
             }}
           >
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <Box>
-                <Typography 
-                  variant={isSection ? 'h6' : 'subtitle1'} 
-                  component="div"
-                  color={isSection ? 'primary' : 'textPrimary'}
-                >
-                  {pathString} {block.title}
-                </Typography>
-                
-                {block.description && (
-                  <Typography variant="body2" color="textSecondary">
-                    {block.description}
-                  </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                {isSection && (
+                  <IconButton 
+                    size="small" 
+                    onClick={() => toggleCollapse(block.id)}
+                    sx={{ mr: 1 }}
+                  >
+                    {isCollapsed ? <ExpandMoreIcon /> : <ExpandLessIcon />}
+                  </IconButton>
                 )}
-                
-                {!isSection && (
-                  <Typography variant="body2" color="textSecondary">
-                    Type: {FIELD_TYPES.find(t => t.value === block.fieldType)?.label || block.fieldType}
-                    {block.required && ' (Required)'}
+                <Box>
+                  <Typography 
+                    variant={isSection ? 'h6' : 'subtitle1'} 
+                    component="div"
+                    color={isSection ? 'primary' : 'textPrimary'}
+                  >
+                    {pathString} {block.title}
                   </Typography>
-                )}
+                  
+                  {block.description && (
+                    <Typography variant="body2" color="textSecondary">
+                      {block.description}
+                    </Typography>
+                  )}
+                  
+                  {!isSection && (
+                    <Typography variant="body2" color="textSecondary">
+                      Type: {FIELD_TYPES.find(t => t.value === block.fieldType)?.label || block.fieldType}
+                      {block.required && ' (Required)'}
+                    </Typography>
+                  )}
+                </Box>
               </Box>
               
               <Box>
@@ -434,7 +466,7 @@ function FormBlockEditor({ blocks, updateBlocks }) {
                         color="primary"
                         onClick={() => addField(currentPath)}
                       >
-                        <AddIcon fontSize="small" />
+                        <DynamicFormIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
                   </>
@@ -488,9 +520,11 @@ function FormBlockEditor({ blocks, updateBlocks }) {
             
             {/* Render children for sections */}
             {isSection && block.children && block.children.length > 0 && (
-              <Box sx={{ mt: 2 }}>
-                {renderBlocks(block.children, currentPath)}
-              </Box>
+              <Collapse in={!isCollapsed} timeout="auto" unmountOnExit>
+                <Box sx={{ mt: 2 }}>
+                  {renderBlocks(block.children, currentPath)}
+                </Box>
+              </Collapse>
             )}
           </Paper>
         </Box>
