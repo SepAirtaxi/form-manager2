@@ -31,9 +31,9 @@ const theme = createTheme({
     MuiContainer: {
       styleOverrides: {
         root: {
-          // Admin interface constraint
+          // Admin interface constraint - increased width from 900px to 1000px
           '&.admin-container': {
-            maxWidth: '900px',
+            maxWidth: '1000px',
           },
         },
       },

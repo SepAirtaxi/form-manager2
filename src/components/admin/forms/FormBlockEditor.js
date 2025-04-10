@@ -22,7 +22,7 @@ import {
   Collapse
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
-import DynamicFormIcon from '@mui/icons-material/DynamicForm'; // New icon for Add Field
+import DynamicFormIcon from '@mui/icons-material/DynamicForm'; // Icon for Add Field
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
@@ -383,30 +383,43 @@ function FormBlockEditor({ blocks, updateBlocks }) {
     return null;
   };
   
-  // Recursive function to render blocks
-  const renderBlocks = (blocksArray = blocks, parentPath = []) => {
+  // Recursive function to render blocks, now with different visual hierarchy approach
+  const renderBlocks = (blocksArray = blocks, parentPath = [], level = 0) => {
     return blocksArray.map((block, index) => {
       const currentPath = [...parentPath, index + 1];
       const pathString = currentPath.join('.');
-      const indentLevel = block.level - 1;
       const isSection = block.type === 'section';
       const isCollapsed = collapsedSections[block.id] || false;
       
-      // Adjust for indentation
-      const indentWidth = indentLevel * 40;
+      // Get container style based on level
+      const getBorderColor = (blockLevel) => {
+        if (isSection) {
+          switch(blockLevel) {
+            case 1: return '#0064B2'; // Primary blue
+            case 2: return '#007bff'; // Lighter blue
+            case 3: return '#4dabf5'; // Lightest blue
+            default: return '#0064B2';
+          }
+        }
+        return '#9e9e9e'; // Grey for fields
+      };
+      
+      // Apply indentation with box-shadow instead of margin
+      const getLeftBorderStyle = (blockLevel) => {
+        return `4px solid ${getBorderColor(blockLevel)}`;
+      };
       
       return (
         <Box key={block.id} sx={{ mb: 2 }}>
           <Paper
             sx={{
               p: 2,
-              ml: `${indentWidth}px`,
-              width: `calc(100% - ${indentWidth}px)`,
               bgcolor: isSection ? 'white' : '#f5f5f5',
               border: '1px solid #e0e0e0',
-              borderLeft: isSection 
-                ? `4px solid ${block.level === 1 ? '#0064B2' : block.level === 2 ? '#007bff' : '#4dabf5'}`
-                : '4px solid #9e9e9e'
+              borderLeft: getLeftBorderStyle(block.level),
+              // Apply visual hierarchy with nested padding instead of margin
+              ml: level > 0 ? 3 : 0,
+              position: 'relative',
             }}
           >
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -426,7 +439,7 @@ function FormBlockEditor({ blocks, updateBlocks }) {
                     component="div"
                     color={isSection ? 'primary' : 'textPrimary'}
                   >
-                    {pathString} {block.title}
+                    <span style={{ color: '#777777', marginRight: '4px' }}>{pathString}</span> {block.title}
                   </Typography>
                   
                   {block.description && (
@@ -522,7 +535,7 @@ function FormBlockEditor({ blocks, updateBlocks }) {
             {isSection && block.children && block.children.length > 0 && (
               <Collapse in={!isCollapsed} timeout="auto" unmountOnExit>
                 <Box sx={{ mt: 2 }}>
-                  {renderBlocks(block.children, currentPath)}
+                  {renderBlocks(block.children, currentPath, level + 1)}
                 </Box>
               </Collapse>
             )}
